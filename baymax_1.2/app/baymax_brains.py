@@ -1,8 +1,13 @@
 # app/baymax_brain.py
-from openai import OpenAI
 import json, time, subprocess
 import re
-client = OpenAI()
+from ollama import Client
+
+ollama_client = Client(
+    host="http://localhost:11434",
+    timeout=120.0,
+)
+
 
 
 def _parse_timer_seconds(t: str) -> int | None:
@@ -85,36 +90,53 @@ def run_action(parsed):
     return say or "Baik."
 
 def gpt5_plan(user_text, memory_snippets=None):
-    import json, re
-    sys = (
-      "Kamu adalah Baymax, asisten Indonesia yang aksi-oriented. "
-      "Keluarkan HANYA 1 objek JSON valid sesuai skema. "
-      "Skema: {\"action\":\"add_note|start_timer|open_app|reply_only\", "
-      "\"args\": {\"text\"?:string, \"seconds\"?:number, \"name\"?:string}, "
-      "\"say\"?:string}."
+    """Penghubung sementara ke Ollama untuk loop suara lama.
+
+    Nama lama dipertahankan agar import yang sudah ada tidak rusak.
+    Fungsi ini hanya menghasilkan rencana, tidak menjalankan aksi.
+    """
+    system_prompt = (
+        "Kamu adalah planner Baymax yang memahami bahasa Indonesia "
+        "dan Inggris. Hasilkan satu objek JSON sesuai schema. "
+        "Pilih add_note, start_timer, open_app, atau reply_only. "
+        "Untuk add_note, isi args.text tanpa menerjemahkan catatan. "
+        "Untuk start_timer, isi args.seconds dalam detik, "
+        "antara 1 sampai 86400. "
+        "Untuk open_app, isi args.name hanya notepad atau calculator. "
+        "Petakan kalkulator menjadi calculator. "
+        "Jika informasi tidak lengkap, permintaan tidak didukung, "
+        "atau ada beberapa aksi, pilih reply_only dan minta klarifikasi. "
+        "say mengikuti bahasa pengguna dan tidak boleh mengaku "
+        "bahwa aksi sudah dijalankan."
     )
-    messages = [
-        {"role":"system","content": sys},
-        {"role":"user","content": f"Instruksi pengguna: {user_text}"}
-    ]
-    if memory_snippets:
-        messages.insert(1, {"role":"system","content": f"Memori singkat: {memory_snippets}"})
 
     try:
-        # Kompatibel dengan SDK lama: Chat Completions (tanpa response_format)
-        chat = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=messages,
-            temperature=0
+        response = ollama_client.chat(
+            model="qwen3.5:4b",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
+            format=ACTION_SCHEMA,
+            options={
+                "temperature": 0,
+                "num_ctx": 4096,
+            },
         )
-        text = chat.choices[0].message.content.strip()
-        try:
-            return json.loads(text)
-        except Exception:
-            m = re.search(r"\{.*\}", text, re.DOTALL)
-            if m:
-                return json.loads(m.group(0))
-            return {"action":"reply_only","say": text[:200]}
-    except Exception:
-        # QUOTA/429 atau error lain → fallback lokal
-        return local_fallback_plan(user_text)
+
+        plan = json.loads(response.message.content or "")
+
+        # Penghubung ini tidak mengeksekusi aksi.
+        # Validasi lengkap akan disatukan dengan planner baru.
+        return plan
+
+    except Exception as exc:
+        print(f"[PLANNER] Ollama gagal: {type(exc).__name__}")
+        return {
+            "action": "reply_only",
+            "args": {},
+            "say": (
+                "Planner lokal belum dapat memproses permintaan. "
+                "The local planner could not process the request."
+            ),
+        }

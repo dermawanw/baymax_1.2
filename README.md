@@ -41,13 +41,13 @@ Ensure the Ollama server is running.
 Check the local model connection:
 
 ```bash
-uv run python scripts/check_ollama.py
+uv run python -m scripts.check_ollama
 ```
 
 Run the bilingual planner:
 
 ```bash
-uv run python scripts/check_planner.py
+uv run python -m scripts.check_planner
 ```
 
 ## Project structure

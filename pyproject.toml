@@ -7,6 +7,7 @@ dependencies = [
     "numpy>=2.2.6",
     "ollama>=0.6.3",
     "openai>=3.35.1",
+    "pydantic>=2.14.1",
     "python-dotenv>=1.2.4",
     "pyttsx3>=2.99",
     "requests>=2.34.2",
